@@ -1,11 +1,21 @@
+using static System.Net.WebRequestMethods;
+using Microsoft.EntityFrameworkCore;
+using GelirGiderTakip.Api.Data;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddDbContext<AppDBContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("GelirGiderTakipDb"));
+});
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+//builder.Services->Uygulamada kullanacaðýmýz servisleri ekliyoruz.
 builder.Services.AddOpenApi();
 
+//app->HTTP isteklerinin nasýl iþleneceðini ayarlýyoruz.
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -25,6 +35,7 @@ app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
+//Controller'lardaki endpoint'leri HTTP isteklerine baðlar.
 app.MapControllers();
 
 app.Run();
