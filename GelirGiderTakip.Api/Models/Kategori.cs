@@ -21,5 +21,7 @@ namespace GelirGiderTakip.Api.Models
         public int? KullaniciId { get; set; }
         public Kullanici? Kullanici { get; set; }
 
+        public ICollection<FisDetayi> FisDetaylari { get; set; }
+         = new List<FisDetayi>();
     }
 }

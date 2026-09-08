@@ -36,6 +36,8 @@ namespace GelirGiderTakip.Api.Models
             = new List<Kategori>();
         public ICollection<Isletme> OlusturduguIsletmeler { get; set; }
             = new List<Isletme>();
+        public ICollection<Fis> Fisler { get; set; }
+            = new List<Fis>();
 
     }
 }
