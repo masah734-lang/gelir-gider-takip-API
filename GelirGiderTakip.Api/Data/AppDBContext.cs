@@ -14,6 +14,8 @@ namespace GelirGiderTakip.Api.Data
         public DbSet<Fis> Fisler { get; set; }
         public DbSet<FisDetayi> FisDetaylari { get; set; }
         public DbSet<FinansalIslem> FinansalIslemler { get; set; }
+        public DbSet<Butce> Butceler { get; set; }
+        public DbSet<Bildirim> Bildirimler { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

@@ -39,7 +39,11 @@ namespace GelirGiderTakip.Api.Models
         public ICollection<Fis> Fisler { get; set; }
             = new List<Fis>();
         public ICollection<FinansalIslem> FinansalIslemler { get; set; }
-    = new List<FinansalIslem>();
+            = new List<FinansalIslem>();
+        public ICollection<Butce> Butceler { get; set; }
+            = new List<Butce>();
+        public ICollection<Bildirim> Bildirimler { get; set; }
+            = new List<Bildirim>();
 
     }
 }

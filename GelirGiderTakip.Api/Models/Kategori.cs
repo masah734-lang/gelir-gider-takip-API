@@ -25,5 +25,7 @@ namespace GelirGiderTakip.Api.Models
          = new List<FisDetayi>();
         public ICollection<FinansalIslem> FinansalIslemler { get; set; }
         = new List<FinansalIslem>();
+        public ICollection<Butce> Butceler { get; set; }
+            = new List<Butce>();
     }
 }
