@@ -38,6 +38,8 @@ namespace GelirGiderTakip.Api.Models
             = new List<Isletme>();
         public ICollection<Fis> Fisler { get; set; }
             = new List<Fis>();
+        public ICollection<FinansalIslem> FinansalIslemler { get; set; }
+    = new List<FinansalIslem>();
 
     }
 }

@@ -6,8 +6,6 @@ namespace GelirGiderTakip.Api.Models
     {
         public int Id { get; set; }
 
-        public int? OlusturanKullaniciId { get; set; }
-
         [Required]
         [MaxLength(150)]
         public string Ad { get; set; } = string.Empty;
@@ -19,7 +17,11 @@ namespace GelirGiderTakip.Api.Models
 
         public DateTime? GuncellenmeTarihi { get; set; }
 
+        public int? OlusturanKullaniciId { get; set; }
         public Kullanici? OlusturanKullanici { get; set; }
+
+        public ICollection<FinansalIslem> FinansalIslemler { get; set; }
+        = new List<FinansalIslem>();
     }
 }
 

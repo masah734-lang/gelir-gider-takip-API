@@ -13,6 +13,7 @@ namespace GelirGiderTakip.Api.Data
         public DbSet<Isletme> Isletmeler { get; set; }
         public DbSet<Fis> Fisler { get; set; }
         public DbSet<FisDetayi> FisDetaylari { get; set; }
+        public DbSet<FinansalIslem> FinansalIslemler { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
