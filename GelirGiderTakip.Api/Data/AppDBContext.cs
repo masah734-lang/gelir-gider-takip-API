@@ -9,6 +9,8 @@ namespace GelirGiderTakip.Api.Data
         }
 
         public DbSet<Kullanici> Kullanicilar { get; set; }
+        public DbSet<Kategori> Kategoriler { get; set; }
+        public DbSet<Isletme> Isletmeler { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

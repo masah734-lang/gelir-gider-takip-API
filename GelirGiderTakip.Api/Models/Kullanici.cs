@@ -32,5 +32,10 @@ namespace GelirGiderTakip.Api.Models
 
         public bool AktifMi { get; set; } = true;
 
+        public ICollection<Kategori> Kategoriler { get; set; }
+            = new List<Kategori>();
+        public ICollection<Isletme> OlusturduguIsletmeler { get; set; }
+            = new List<Isletme>();
+
     }
 }
