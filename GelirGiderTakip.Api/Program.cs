@@ -1,14 +1,18 @@
 using static System.Net.WebRequestMethods;
 using Microsoft.EntityFrameworkCore;
 using GelirGiderTakip.Api.Data;
+using GelirGiderTakip.Api.Models;
+using Microsoft.AspNetCore.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddDbContext<AppDBContext>(options =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("GelirGiderTakipDb"));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("GelirGiderTakipDb")); 
 });
+
+builder.Services.AddScoped<IPasswordHasher<Kullanici>, PasswordHasher<Kullanici>>();
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
