@@ -4,9 +4,12 @@ using GelirGiderTakip.Api.Enums;
 using GelirGiderTakip.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace GelirGiderTakip.Api.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/kategoriler")]
     public class KategorilerController : ControllerBase
@@ -20,8 +23,10 @@ namespace GelirGiderTakip.Api.Controllers
 
         //GET örnek endpointleri
         [HttpGet]
-        public async Task<ActionResult<List<KategoriGetDto>>> GetKategoriler(int kullaniciId)
+        public async Task<ActionResult<List<KategoriGetDto>>> GetKategoriler()
         {
+            var kullaniciId = KullaniciIdGetir();
+
             var kategoriler = await _context.Kategoriler
                 .AsNoTracking()
                 .Where(kategori =>
@@ -41,12 +46,11 @@ namespace GelirGiderTakip.Api.Controllers
 
             return Ok(kategoriler);
         }
-
         [HttpGet("{id:int}")]
-        public async Task<ActionResult<KategoriGetDto>> GetKategori(
-         int id,
-         int kullaniciId)
-         {
+        public async Task<ActionResult<KategoriGetDto>> GetKategori(int id)
+        {
+            var kullaniciId = KullaniciIdGetir();
+
             var kategori = await _context.Kategoriler
                 .AsNoTracking()
                 .Where(kategori =>
@@ -71,13 +75,16 @@ namespace GelirGiderTakip.Api.Controllers
             return Ok(kategori);
         }
 
-        //POST örnek endpointleri
         [HttpPost]
         public async Task<ActionResult<KategoriGetDto>> PostKategori(
-            KategoriPostDto dto)
+    KategoriPostDto dto)
         {
+            var kullaniciId = KullaniciIdGetir();
+
             var kullaniciVarMi = await _context.Kullanicilar
-                .AnyAsync(kullanici => kullanici.Id == dto.KullaniciId);
+                .AnyAsync(kullanici =>
+                    kullanici.Id == kullaniciId &&
+                    kullanici.AktifMi);
 
             if (!kullaniciVarMi)
             {
@@ -86,9 +93,32 @@ namespace GelirGiderTakip.Api.Controllers
 
             var kategoriAdi = dto.Ad.Trim();
 
+            if (string.IsNullOrWhiteSpace(kategoriAdi))
+            {
+                return BadRequest("Kategori adi bos olamaz.");
+            }
+
+            if (!Enum.IsDefined(typeof(IslemTuru), dto.Tur))
+            {
+                return BadRequest("Gecersiz islem turu.");
+            }
+
+            // Once varsayilan kategorileri kontrol et
+            var varsayilanKategoriVarMi = await _context.Kategoriler
+                .AnyAsync(kategori =>
+                    kategori.KullaniciId == null &&
+                    kategori.Ad == kategoriAdi &&
+                    kategori.Tur == dto.Tur);
+
+            if (varsayilanKategoriVarMi)
+            {
+                return Conflict(
+                    "Bu isim ve turde varsayilan bir kategori zaten mevcut.");
+            }
+
             var mevcutKategori = await _context.Kategoriler
                 .FirstOrDefaultAsync(kategori =>
-                    kategori.KullaniciId == dto.KullaniciId &&
+                    kategori.KullaniciId == kullaniciId &&
                     kategori.Ad == kategoriAdi &&
                     kategori.Tur == dto.Tur);
 
@@ -119,7 +149,7 @@ namespace GelirGiderTakip.Api.Controllers
             {
                 Ad = kategoriAdi,
                 Tur = dto.Tur,
-                KullaniciId = dto.KullaniciId,
+                KullaniciId = kullaniciId,
                 AktifMi = true,
                 OlusturulmaTarihi = DateTime.UtcNow
             };
@@ -140,19 +170,17 @@ namespace GelirGiderTakip.Api.Controllers
                 nameof(GetKategori),
                 new
                 {
-                    id = yeniKategori.Id,
-                    kullaniciId = dto.KullaniciId
+                    id = yeniKategori.Id
                 },
                 kategoriDto);
         }
-
         //PUT örnek endpointleri
         [HttpPut("{id:int}")]
         public async Task<IActionResult> PutKategori(
          int id,
-         int kullaniciId,
          KategoriPutDto dto)
         {
+            var kullaniciId = KullaniciIdGetir();
             var kategori = await _context.Kategoriler
                 .FirstOrDefaultAsync(kategori =>
                     kategori.Id == id &&
@@ -170,7 +198,7 @@ namespace GelirGiderTakip.Api.Controllers
             {
                 return BadRequest("Kategori adi bos olamaz.");
             }
-
+            
             if (!Enum.IsDefined(typeof(IslemTuru), dto.Tur))
             {
                 return BadRequest("Gecersiz islem turu.");
@@ -199,6 +227,7 @@ namespace GelirGiderTakip.Api.Controllers
                 return Conflict("Bu isim ve turde varsayilan bir kategori zaten mevcut.");
             }
 
+
             kategori.Ad = kategoriAdi;
             kategori.Tur = dto.Tur;
             kategori.GuncellenmeTarihi = DateTime.UtcNow;
@@ -211,9 +240,10 @@ namespace GelirGiderTakip.Api.Controllers
         //DELETE örnek endpointleri
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteKategori(
-    int id,
-    int kullaniciId)
+            int id
+            )
         {
+            var kullaniciId = KullaniciIdGetir();
             var kategori = await _context.Kategoriler
                 .FirstOrDefaultAsync(kategori =>
                     kategori.Id == id &&
@@ -231,6 +261,12 @@ namespace GelirGiderTakip.Api.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+        private int KullaniciIdGetir()
+        {
+            var kullaniciId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            return int.Parse(kullaniciId!);
         }
     }
 }
