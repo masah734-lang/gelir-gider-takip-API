@@ -6,6 +6,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.OpenApi;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,7 +46,11 @@ builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 //builder.Services->Uygulamada kullanacaðýmýz servisleri ekliyoruz.
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<AuthOperationTransformer>();
+});
 
 
 //app->HTTP isteklerinin nasýl iþleneceðini ayarlýyoruz.
@@ -69,3 +77,72 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+internal sealed class BearerSecuritySchemeTransformer(
+    IAuthenticationSchemeProvider authenticationSchemeProvider)
+    : IOpenApiDocumentTransformer
+{
+    public async Task TransformAsync(
+        OpenApiDocument document,
+        OpenApiDocumentTransformerContext context,
+        CancellationToken cancellationToken)
+    {
+        var authenticationSchemes =
+            await authenticationSchemeProvider.GetAllSchemesAsync();
+
+        if (authenticationSchemes.Any(
+            scheme => scheme.Name == "Bearer"))
+        {
+            document.Components ??= new OpenApiComponents();
+
+            document.Components.SecuritySchemes =
+                new Dictionary<string, IOpenApiSecurityScheme>
+                {
+                    ["Bearer"] = new OpenApiSecurityScheme
+                    {
+                        Type = SecuritySchemeType.Http,
+                        Scheme = "bearer",
+                        BearerFormat = "JWT",
+                        In = ParameterLocation.Header
+                    }
+                };
+        }
+    }
+}
+
+internal sealed class AuthOperationTransformer
+    : IOpenApiOperationTransformer
+{
+    public Task TransformAsync(
+        OpenApiOperation operation,
+        OpenApiOperationTransformerContext context,
+        CancellationToken cancellationToken)
+    {
+        var authorizeVarMi =
+            context.Description.ActionDescriptor.EndpointMetadata
+                .OfType<IAuthorizeData>()
+                .Any();
+
+        var anonimMi =
+            context.Description.ActionDescriptor.EndpointMetadata
+                .OfType<IAllowAnonymous>()
+                .Any();
+
+        if (!authorizeVarMi || anonimMi)
+        {
+            return Task.CompletedTask;
+        }
+
+        operation.Security ??= [];
+
+        operation.Security.Add(
+            new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference(
+                    "Bearer",
+                    context.Document)] = []
+            });
+
+        return Task.CompletedTask;
+    }
+}

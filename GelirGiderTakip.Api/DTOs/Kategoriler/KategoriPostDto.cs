@@ -11,5 +11,5 @@ public class KategoriPostDto
 
     public IslemTuru Tur { get; set; }
 
-    public int KullaniciId { get; set; }
+   
 }
