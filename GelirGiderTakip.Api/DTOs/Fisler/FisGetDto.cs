@@ -16,6 +16,8 @@
 
         public DateTime YuklenmeTarihi { get; set; }
 
+        public DateTime? DogrulanmaTarihi { get; set; }
+
         public string? HamOcrMetni { get; set; }
     }
 }

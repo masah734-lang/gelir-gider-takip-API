@@ -1,6 +1,7 @@
 ﻿using GelirGiderTakip.Api.Data;
 using GelirGiderTakip.Api.DTOs.Fisler;
 using GelirGiderTakip.Api.Models;
+using GelirGiderTakip.Api.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Globalization;
@@ -46,6 +47,7 @@ namespace GelirGiderTakip.Api.Controllers
                     AlgilananTutar = fis.AlgilananTutar,
                     AlgilananTarih = fis.AlgilananTarih,
                     YuklenmeTarihi = fis.YuklenmeTarihi,
+                    DogrulanmaTarihi = fis.DogrulanmaTarihi,
                     HamOcrMetni = fis.HamOcrMetni
                 })
                 .ToListAsync();
@@ -72,6 +74,7 @@ namespace GelirGiderTakip.Api.Controllers
                     AlgilananTutar = fis.AlgilananTutar,
                     AlgilananTarih = fis.AlgilananTarih,
                     YuklenmeTarihi = fis.YuklenmeTarihi,
+                    DogrulanmaTarihi = fis.DogrulanmaTarihi,
                     HamOcrMetni = fis.HamOcrMetni
                 })
                 .FirstOrDefaultAsync();
@@ -234,6 +237,7 @@ namespace GelirGiderTakip.Api.Controllers
                 fis.AlgilananIsletmeAdi,
                 fis.AlgilananTarih,
                 fis.AlgilananTutar,
+                fis.DogrulanmaTarihi,
                 fis.HamOcrMetni
             });
         }
@@ -349,6 +353,7 @@ namespace GelirGiderTakip.Api.Controllers
             fis.AlgilananIsletmeAdi = dto.IsletmeAdi?.Trim();
             fis.AlgilananTutar = dto.Tutar;
             fis.AlgilananTarih = dto.Tarih;
+            fis.DogrulanmaTarihi = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
@@ -359,7 +364,113 @@ namespace GelirGiderTakip.Api.Controllers
                 fis.AlgilananIsletmeAdi,
                 fis.AlgilananTutar,
                 fis.AlgilananTarih,
+                fis.DogrulanmaTarihi,
                 fis.HamOcrMetni
+            });
+        }
+
+        [HttpPost("{id:int}/finansal-islem")]
+        public async Task<IActionResult> PostFisFinansalIslem(
+        int id,
+        FisFinansalIslemPostDto dto)
+        {
+            var kullaniciId = KullaniciIdGetir();
+
+            // Fis bu kullaniciya ait mi?
+            var fis = await _context.Fisler
+                .FirstOrDefaultAsync(fis =>
+                    fis.Id == id &&
+                    fis.KullaniciId == kullaniciId);
+
+            if (fis == null)
+            {
+                return NotFound("Fis bulunamadi.");
+            }
+
+            // Bu fisten daha once finansal islem olusturulmus mu?
+            var finansalIslemVarMi = await _context.FinansalIslemler
+                .AnyAsync(islem =>
+                    islem.FisId == fis.Id);
+
+            if (finansalIslemVarMi)
+            {
+                return Conflict(
+                    "Bu fis icin daha once finansal islem olusturulmus.");
+            }
+
+            // Tutar OCR tarafinda bulunmus / dogrulanmis olmali
+            if (!fis.AlgilananTutar.HasValue ||
+                fis.AlgilananTutar.Value <= 0)
+            {
+                return BadRequest(
+                    "Fis tutari bulunamadi. Once fis bilgilerini dogrulayin.");
+            }
+
+            // Tarih de bulunmus / dogrulanmis olmali
+            if (!fis.AlgilananTarih.HasValue)
+            {
+                return BadRequest(
+                    "Fis tarihi bulunamadi. Once fis bilgilerini dogrulayin.");
+            }
+
+            // Secilen kategori kullanilabilir bir gider kategorisi mi?
+            var kategori = await _context.Kategoriler
+                .AsNoTracking()
+                .FirstOrDefaultAsync(kategori =>
+                    kategori.Id == dto.KategoriId &&
+                    kategori.AktifMi &&
+                    kategori.Tur == IslemTuru.Gider &&
+                    (kategori.KullaniciId == null ||
+                     kategori.KullaniciId == kullaniciId));
+
+            if (kategori == null)
+            {
+                return BadRequest(
+                    "Gecerli bir gider kategorisi secilmelidir.");
+            }
+
+            var finansalIslem = new FinansalIslem
+            {
+                KullaniciId = kullaniciId,
+
+                Tur = IslemTuru.Gider,
+
+                Tutar = fis.AlgilananTutar.Value,
+
+                IslemTarihi = fis.AlgilananTarih.Value,
+
+                KategoriId = kategori.Id,
+
+                FisId = fis.Id,
+
+                IsletmeId = null,
+
+                Aciklama = string.IsNullOrWhiteSpace(dto.Aciklama)
+                    ? $"Fis islemi - {fis.AlgilananIsletmeAdi}"
+                    : dto.Aciklama.Trim(),
+
+                OlusturulmaTarihi = DateTime.UtcNow
+            };
+
+            _context.FinansalIslemler.Add(finansalIslem);
+
+            // Fis artik tamamlanmis kabul edilebilir
+            fis.Durum = FisDurumu.Tamamlandi;
+            fis.IslenmeTarihi = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            return Created("", new
+            {
+                finansalIslem.Id,
+                finansalIslem.Tur,
+                finansalIslem.Tutar,
+                finansalIslem.IslemTarihi,
+                finansalIslem.Aciklama,
+                finansalIslem.KategoriId,
+                KategoriAdi = kategori.Ad,
+                finansalIslem.FisId,
+                IsletmeAdi = fis.AlgilananIsletmeAdi
             });
         }
     }

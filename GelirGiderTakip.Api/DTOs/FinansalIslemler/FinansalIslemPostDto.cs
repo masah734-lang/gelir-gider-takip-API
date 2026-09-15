@@ -17,6 +17,6 @@ namespace GelirGiderTakip.Api.DTOs.FinansalIslemler
 
         public int? KategoriId { get; set; }
 
-        public int? IsletmeId { get; set; }
+        
     }
 }
