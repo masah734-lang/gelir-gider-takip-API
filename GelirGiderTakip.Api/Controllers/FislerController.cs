@@ -1,15 +1,16 @@
 ﻿using GelirGiderTakip.Api.Data;
 using GelirGiderTakip.Api.DTOs.Fisler;
-using GelirGiderTakip.Api.Models;
 using GelirGiderTakip.Api.Enums;
+using GelirGiderTakip.Api.Models;
+using GelirGiderTakip.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
 using TesseractOCR;
 using TesseractOCR.Enums;
-using Microsoft.EntityFrameworkCore;
 
 namespace GelirGiderTakip.Api.Controllers
 {
@@ -20,13 +21,75 @@ namespace GelirGiderTakip.Api.Controllers
     {
         private readonly AppDBContext _context;
         private readonly IWebHostEnvironment _environment;
+        private readonly ButceBildirimServisi _butceBildirimServisi;
 
         public FislerController(
             AppDBContext context,
-            IWebHostEnvironment environment)
+            IWebHostEnvironment environment,
+             ButceBildirimServisi butceBildirimServisi)
         {
             _context = context;
             _environment = environment;
+            _butceBildirimServisi = butceBildirimServisi;
+        }
+
+        private async Task FinansalIslemSenkronizeEt(
+         Fis fis,
+        int kullaniciId)
+        {
+            // OCR tutari okuyamamissa simdilik islem olusturma.
+            // Kullanici duzeltince tekrar bu metot calisacak.
+            if (!fis.AlgilananTutar.HasValue ||
+                fis.AlgilananTutar.Value <= 0)
+            {
+                fis.Durum = FisDurumu.Bekliyor;
+                return;
+            }
+
+            var mevcutIslem = await _context.FinansalIslemler
+                .FirstOrDefaultAsync(islem =>
+                    islem.FisId == fis.Id &&
+                    islem.KullaniciId == kullaniciId);
+
+            // Fis tarihi okunamadiysa gecici olarak yuklenme tarihini kullan.
+            var islemTarihi =
+                fis.AlgilananTarih ?? fis.YuklenmeTarihi;
+
+            if (mevcutIslem == null)
+            {
+                var yeniIslem = new FinansalIslem
+                {
+                    KullaniciId = kullaniciId,
+                    Tur = IslemTuru.Gider,
+                    Tutar = fis.AlgilananTutar.Value,
+                    IslemTarihi = islemTarihi,
+
+                    Aciklama = string.IsNullOrWhiteSpace(
+                        fis.AlgilananIsletmeAdi)
+                        ? "Fis ile eklenen gider"
+                        : $"Fis - {fis.AlgilananIsletmeAdi}",
+
+                    // Kategori tahmin edilemiyorsa simdilik null.
+                    KategoriId = null,
+
+                    FisId = fis.Id,
+
+                    OlusturulmaTarihi = DateTime.UtcNow
+                };
+
+                _context.FinansalIslemler.Add(yeniIslem);
+            }
+            else
+            {
+                // Kullanici OCR sonucunu duzeltmisse
+                // finansal islem de otomatik guncellensin.
+                mevcutIslem.Tutar = fis.AlgilananTutar.Value;
+                mevcutIslem.IslemTarihi = islemTarihi;
+                mevcutIslem.GuncellenmeTarihi = DateTime.UtcNow;
+            }
+
+            fis.Durum = FisDurumu.Tamamlandi;
+            fis.IslenmeTarihi = DateTime.UtcNow;
         }
 
         [HttpGet]
@@ -86,6 +149,8 @@ namespace GelirGiderTakip.Api.Controllers
 
             return Ok(fis);
         }
+
+        
 
         [HttpPost]
         [Consumes("multipart/form-data")]
@@ -225,9 +290,35 @@ namespace GelirGiderTakip.Api.Controllers
                 YuklenmeTarihi = DateTime.UtcNow
             };
 
+            // Once fisi kaydediyoruz ki Id olussun.
             _context.Fisler.Add(fis);
 
             await _context.SaveChangesAsync();
+
+            var fisDetaylari = FisDetaylariniBul(
+            ocrMetni,
+            fis.Id);
+
+            if (fisDetaylari.Count > 0)
+            {
+                _context.FisDetaylari.AddRange(
+                    fisDetaylari);
+            }
+
+            // OCR sonucu yeterliyse finansal islemi otomatik olustur.
+            await FinansalIslemSenkronizeEt(
+                fis,
+                kullaniciId);
+
+            await _context.SaveChangesAsync();
+
+            if (fis.AlgilananTutar.HasValue)
+            {
+                await _butceBildirimServisi.ButceleriKontrolEt(
+                    kullaniciId,
+                    fis.AlgilananTarih ?? fis.YuklenmeTarihi,
+                    null);
+            }
 
             return Created("", new
             {
@@ -355,6 +446,11 @@ namespace GelirGiderTakip.Api.Controllers
             fis.AlgilananTarih = dto.Tarih;
             fis.DogrulanmaTarihi = DateTime.UtcNow;
 
+            
+            await FinansalIslemSenkronizeEt(
+            fis,
+            kullaniciId);
+
             await _context.SaveChangesAsync();
 
             return Ok(new
@@ -460,6 +556,7 @@ namespace GelirGiderTakip.Api.Controllers
 
             await _context.SaveChangesAsync();
 
+
             return Created("", new
             {
                 finansalIslem.Id,
@@ -472,6 +569,207 @@ namespace GelirGiderTakip.Api.Controllers
                 finansalIslem.FisId,
                 IsletmeAdi = fis.AlgilananIsletmeAdi
             });
+        }
+
+
+        private List<FisDetayi> FisDetaylariniBul(
+        string ocrMetni,
+        int fisId)
+        {
+            var detaylar = new List<FisDetayi>();
+
+            var satirlar = ocrMetni
+                .Split(
+                    '\n',
+                    StringSplitOptions.RemoveEmptyEntries)
+                .Select(satir => satir.Trim())
+                .Where(satir => !string.IsNullOrWhiteSpace(satir))
+                .ToList();
+
+            var siraNo = 1;
+
+            foreach (var satir in satirlar)
+            {
+                // Barkod / miktar satirlarini simdilik atla
+                if (satir.Contains(
+                        "ADET",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                // Toplam, para ustu gibi satirlari urun sanma
+                if (satir.Contains(
+                        "GENEL TOPLAM",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    satir.Contains(
+                        "ALINAN PARA",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    satir.Contains(
+                        "PARA ÜSTÜ",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    satir.Contains(
+                        "KDV",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var eslesme = Regex.Match(
+                    satir,
+                    @"^(?<urun>.+?)\s+(?<tutar>\d+[.,]\d{2})$");
+
+                if (!eslesme.Success)
+                {
+                    continue;
+                }
+
+                var urunAdi = eslesme
+                    .Groups["urun"]
+                    .Value
+                    .Trim();
+
+                var tutarMetni = eslesme
+                    .Groups["tutar"]
+                    .Value
+                    .Replace(",", ".");
+
+                if (!decimal.TryParse(
+                        tutarMetni,
+                        NumberStyles.Number,
+                        CultureInfo.InvariantCulture,
+                        out var toplamTutar))
+                {
+                    continue;
+                }
+
+                detaylar.Add(new FisDetayi
+                {
+                    FisId = fisId,
+                    UrunAdi = urunAdi,
+                    ToplamTutar = toplamTutar,
+                    HamSatirMetni = satir,
+                    SiraNo = siraNo
+                });
+
+                siraNo++;
+            }
+
+            return detaylar;
+        }
+
+        [HttpGet("{id:int}/detaylar")]
+        public async Task<ActionResult<List<FisDetayiGetDto>>> GetFisDetaylari(
+    int id)
+        {
+            var kullaniciId = KullaniciIdGetir();
+
+            var fisVarMi = await _context.Fisler
+                .AsNoTracking()
+                .AnyAsync(fis =>
+                    fis.Id == id &&
+                    fis.KullaniciId == kullaniciId);
+
+            if (!fisVarMi)
+            {
+                return NotFound("Fis bulunamadi.");
+            }
+
+            var detaylar = await _context.FisDetaylari
+                .AsNoTracking()
+                .Where(detay =>
+                    detay.FisId == id)
+                .OrderBy(detay =>
+                    detay.SiraNo)
+                .Select(detay => new FisDetayiGetDto
+                {
+                    Id = detay.Id,
+                    UrunAdi = detay.UrunAdi,
+                    Miktar = detay.Miktar,
+                    BirimFiyat = detay.BirimFiyat,
+                    ToplamTutar = detay.ToplamTutar,
+                    HamSatirMetni = detay.HamSatirMetni,
+                    SiraNo = detay.SiraNo,
+                    KategoriId = detay.KategoriId
+                })
+                .ToListAsync();
+
+            return Ok(detaylar);
+        }
+
+        [HttpPut("{fisId:int}/detaylar/{detayId:int}")]
+        public async Task<IActionResult> PutFisDetayi(
+    int fisId,
+    int detayId,
+    FisDetayiPutDto dto)
+        {
+            var kullaniciId = KullaniciIdGetir();
+
+            var detay = await _context.FisDetaylari
+                .Include(detay => detay.Fis)
+                .FirstOrDefaultAsync(detay =>
+                    detay.Id == detayId &&
+                    detay.FisId == fisId &&
+                    detay.Fis.KullaniciId == kullaniciId);
+
+            if (detay == null)
+            {
+                return NotFound("Fis detayi bulunamadi.");
+            }
+
+            var urunAdi = dto.UrunAdi.Trim();
+
+            if (string.IsNullOrWhiteSpace(urunAdi))
+            {
+                return BadRequest("Urun adi bos olamaz.");
+            }
+
+            if (dto.ToplamTutar <= 0)
+            {
+                return BadRequest(
+                    "Toplam tutar sifirdan buyuk olmalidir.");
+            }
+
+            if (dto.Miktar.HasValue &&
+                dto.Miktar.Value <= 0)
+            {
+                return BadRequest(
+                    "Miktar sifirdan buyuk olmalidir.");
+            }
+
+            if (dto.BirimFiyat.HasValue &&
+                dto.BirimFiyat.Value <= 0)
+            {
+                return BadRequest(
+                    "Birim fiyat sifirdan buyuk olmalidir.");
+            }
+
+            if (dto.KategoriId.HasValue)
+            {
+                var kategoriVarMi = await _context.Kategoriler
+                    .AnyAsync(kategori =>
+                        kategori.Id == dto.KategoriId.Value &&
+                        kategori.AktifMi &&
+                        kategori.Tur == IslemTuru.Gider &&
+                        (kategori.KullaniciId == null ||
+                         kategori.KullaniciId == kullaniciId));
+
+                if (!kategoriVarMi)
+                {
+                    return BadRequest(
+                        "Gecerli bir gider kategorisi secilmelidir.");
+                }
+            }
+
+            detay.UrunAdi = urunAdi;
+            detay.Miktar = dto.Miktar;
+            detay.BirimFiyat = dto.BirimFiyat;
+            detay.ToplamTutar = dto.ToplamTutar;
+            detay.KategoriId = dto.KategoriId;
+
+            await _context.SaveChangesAsync();
+
+            return NoContent();
         }
     }
 }

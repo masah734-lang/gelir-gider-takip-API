@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
+using GelirGiderTakip.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,6 +53,7 @@ builder.Services.AddOpenApi(options =>
     options.AddOperationTransformer<AuthOperationTransformer>();
 });
 
+builder.Services.AddScoped<ButceBildirimServisi>();
 
 //app->HTTP isteklerinin nasýl iþleneceðini ayarlýyoruz.
 var app = builder.Build();

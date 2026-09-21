@@ -2,10 +2,12 @@
 using GelirGiderTakip.Api.DTOs.FinansalIslemler;
 using GelirGiderTakip.Api.Enums;
 using GelirGiderTakip.Api.Models;
+using GelirGiderTakip.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+
 
 namespace GelirGiderTakip.Api.Controllers
 {
@@ -15,10 +17,14 @@ namespace GelirGiderTakip.Api.Controllers
     public class FinansalIslemlerController : ControllerBase
     {
         private readonly AppDBContext _context;
+        private readonly ButceBildirimServisi _butceBildirimServisi;
 
-        public FinansalIslemlerController(AppDBContext context)
+
+        public FinansalIslemlerController(AppDBContext context,
+            ButceBildirimServisi butceBildirimServisi)
         {
             _context = context;
+            _butceBildirimServisi = butceBildirimServisi;
         }
 
         [HttpGet]
@@ -155,6 +161,13 @@ namespace GelirGiderTakip.Api.Controllers
             _context.FinansalIslemler.Add(yeniIslem);
 
             await _context.SaveChangesAsync();
+            if (yeniIslem.Tur == IslemTuru.Gider)
+            {
+                await _butceBildirimServisi.ButceleriKontrolEt(
+                    kullaniciId,
+                    yeniIslem.IslemTarihi,
+                    yeniIslem.KategoriId);
+            }
 
             var sonuc = await _context.FinansalIslemler
                 .AsNoTracking()
