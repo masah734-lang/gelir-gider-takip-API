@@ -24,6 +24,8 @@ namespace GelirGiderTakip.Api.Models
 
         public DateTime? AlgilananTarih { get; set; }
 
+        public DateTime? DogrulanmaTarihi { get; set; }
+
         public FisDurumu Durum { get; set; }
             = FisDurumu.Bekliyor;
 
