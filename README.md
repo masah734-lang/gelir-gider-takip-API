@@ -63,31 +63,81 @@ dotnet restore
 
 SQL Server instance adına göre `Server` değeri değiştirilmelidir.
 
----
+Örneğin SQL Server Express kullanılıyorsa bağlantı:
 
-## 4. JWT Ayarlarını Yapın
-
-JWT oluşturmak için gerekli signing key yapılandırılmalıdır.
-
-Gizli anahtarların repository içerisinde tutulması önerilmez.
-
-Geliştirme ortamında:
-
-```bash
-dotnet user-secrets
+```text
+Server=.\SQLEXPRESS
 ```
 
-veya environment variable kullanılabilir.
+şeklinde olabilir.
+
+---
+
+## 4. JWT Secret Key'i Ayarlayın
+
+Kullanıcı giriş yaptıktan sonra JWT token oluşturulabilmesi için uygulamanın bir **secret key** değerine ihtiyacı vardır.
+
+Bu anahtar güvenlik nedeniyle GitHub repository içerisinde tutulmamalıdır.
+
+Öncelikle API proje klasörüne geçin:
+
+```bash
+cd GelirGiderTakip.Api
+```
+
+Projede User Secrets daha önce başlatılmamışsa:
+
+```bash
+dotnet user-secrets init
+```
+
+komutunu çalıştırın.
+
+Daha sonra JWT için bir secret key ekleyin:
+
+```bash
+dotnet user-secrets set "Jwt:Key" "buraya-uzun-ve-guvenli-bir-secret-key-yazin"
+```
+
+Örneğin:
+
+```bash
+dotnet user-secrets set "Jwt:Key" "GelirGiderTakip-Development-Secret-Key-2026-123456"
+```
+
+> Bu değer yalnızca örnektir. Gerçek kullanımda kendi güçlü ve tahmin edilmesi zor anahtarınızı oluşturun.
+
+Eklenen değeri kontrol etmek için:
+
+```bash
+dotnet user-secrets list
+```
+
+kullanılabilir.
+
+Çıktıda yaklaşık olarak:
+
+```text
+Jwt:Key = GelirGiderTakip-Development-Secret-Key-2026-123456
+```
+
+görülmelidir.
+
+> **Not:** `Jwt:Key` adı, uygulamadaki JWT configuration anahtarının adıyla aynı olmalıdır. Projede farklı bir configuration adı kullanılıyorsa User Secrets içerisindeki anahtar da buna göre değiştirilmelidir.
+
+User Secrets yalnızca geliştirme ortamı için uygundur. Production ortamında JWT secret gibi hassas değerler environment variable veya güvenli secret yönetim servisleri ile saklanmalıdır.
 
 ---
 
 ## 5. Veritabanını Oluşturun
 
-Mevcut migration'ları SQL Server'a uygulamak için:
+Ana proje klasöründeyseniz mevcut migration'ları SQL Server'a uygulamak için:
 
 ```bash
 dotnet ef database update --project GelirGiderTakip.Api
 ```
+
+kullanabilirsiniz.
 
 Visual Studio Package Manager Console kullanılıyorsa:
 
@@ -105,6 +155,8 @@ GelirGiderTakipDb
 
 veritabanı oluşturulur.
 
+Ayrıca projede tanımlanan başlangıç verileri ve kategoriler migration/seed işlemleriyle veritabanına eklenir.
+
 ---
 
 ## 6. OCR Dosyalarını Kontrol Edin
@@ -117,15 +169,27 @@ tessdata/
 
 klasörünün ve gerekli Türkçe dil dosyasının bulunması gerekir.
 
+Örneğin:
+
+```text
+GelirGiderTakip.Api/
+└── tessdata/
+    └── tur.traineddata
+```
+
 Bu dosya bulunmazsa fiş OCR işlemi çalışmayacaktır.
 
 ---
 
 ## 7. Projeyi Çalıştırın
 
+Ana repository klasöründeyseniz:
+
 ```bash
 dotnet run --project GelirGiderTakip.Api
 ```
+
+komutunu çalıştırın.
 
 Visual Studio kullanılıyorsa proje doğrudan başlatılabilir.
 
@@ -961,4 +1025,3 @@ Proje temel gelir-gider takip işlevlerini gerçekleştirmektedir; ancak özelli
 ```text
 https://github.com/masah734-lang/gelir-gider-takip-API
 ```
-
