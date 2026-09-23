@@ -35,7 +35,8 @@ namespace GelirGiderTakip.Api.Controllers
 
         private async Task FinansalIslemSenkronizeEt(
          Fis fis,
-        int kullaniciId)
+        int kullaniciId,
+        int? kategoriId = null)
         {
             // OCR tutari okuyamamissa simdilik islem olusturma.
             // Kullanici duzeltince tekrar bu metot calisacak.
@@ -64,16 +65,14 @@ namespace GelirGiderTakip.Api.Controllers
                     Tutar = fis.AlgilananTutar.Value,
                     IslemTarihi = islemTarihi,
 
-                    Aciklama = string.IsNullOrWhiteSpace(
-                        fis.AlgilananIsletmeAdi)
-                        ? "Fis ile eklenen gider"
-                        : $"Fis - {fis.AlgilananIsletmeAdi}",
+                    Aciklama =
+                        !string.IsNullOrWhiteSpace(fis.AlgilananIsletmeAdi)
+                        ? $"Fis - {fis.AlgilananIsletmeAdi}"
+                        : "Fis ile eklenen gider",
 
-                    // Kategori tahmin edilemiyorsa simdilik null.
-                    KategoriId = null,
-
+                    KategoriId = kategoriId,
+                    IsletmeId = null,
                     FisId = fis.Id,
-
                     OlusturulmaTarihi = DateTime.UtcNow
                 };
 
@@ -81,15 +80,105 @@ namespace GelirGiderTakip.Api.Controllers
             }
             else
             {
-                // Kullanici OCR sonucunu duzeltmisse
-                // finansal islem de otomatik guncellensin.
                 mevcutIslem.Tutar = fis.AlgilananTutar.Value;
                 mevcutIslem.IslemTarihi = islemTarihi;
+
+                if (kategoriId.HasValue)
+                {
+                    mevcutIslem.KategoriId = kategoriId;
+                }
+
                 mevcutIslem.GuncellenmeTarihi = DateTime.UtcNow;
             }
 
             fis.Durum = FisDurumu.Tamamlandi;
             fis.IslenmeTarihi = DateTime.UtcNow;
+        }
+
+        // JWT icindeki kullanici ID'sini getirir
+        private int KullaniciIdGetir()
+        {
+            var kullaniciId = User.FindFirstValue(
+                ClaimTypes.NameIdentifier);
+
+            return int.Parse(kullaniciId!);
+        }
+
+        // OCR metnindeki ilk dolu satiri
+        // isletme adi kabul ediyoruz.
+        private string? IsletmeAdiBul(string ocrMetni)
+        {
+            var satirlar = ocrMetni
+                .Split(
+                    '\n',
+                    StringSplitOptions.RemoveEmptyEntries)
+                .Select(satir => satir.Trim())
+                .Where(satir =>
+                    !string.IsNullOrWhiteSpace(satir))
+                .ToList();
+
+            return satirlar.FirstOrDefault();
+        }
+
+        // 07.05.2019, 07/05/2019 veya
+        // 07-05-2019 gibi tarihleri bulur.
+        private DateTime? TarihBul(string ocrMetni)
+        {
+            var eslesme = Regex.Match(
+                ocrMetni,
+                @"\b(\d{2})[./-](\d{2})[./-](\d{4})\b");
+
+            if (!eslesme.Success)
+            {
+                return null;
+            }
+
+            var tarihMetni = eslesme.Value
+                .Replace(".", "/")
+                .Replace("-", "/");
+
+            if (DateTime.TryParseExact(
+                tarihMetni,
+                "dd/MM/yyyy",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var tarih))
+            {
+                return tarih;
+            }
+
+            return null;
+        }
+
+        // "GENEL TOPLAM 90,20" gibi
+        // bir ifadeden tutari bulur.
+        private decimal? ToplamTutarBul(string ocrMetni)
+        {
+            var eslesme = Regex.Match(
+                ocrMetni,
+                @"GENEL\s+TOPLAM\s+(\d+[.,]\d{2})",
+                RegexOptions.IgnoreCase);
+
+            if (!eslesme.Success)
+            {
+                return null;
+            }
+
+            var tutarMetni = eslesme
+                .Groups[1]
+                .Value
+                .Replace(",", ".");
+
+            if (decimal.TryParse(
+                tutarMetni,
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out var tutar))
+            {
+                return tutar;
+            }
+
+            return null;
         }
 
         [HttpGet]
@@ -333,91 +422,7 @@ namespace GelirGiderTakip.Api.Controllers
             });
         }
 
-        // JWT icindeki kullanici ID'sini getirir
-        private int KullaniciIdGetir()
-        {
-            var kullaniciId = User.FindFirstValue(
-                ClaimTypes.NameIdentifier);
 
-            return int.Parse(kullaniciId!);
-        }
-
-        // OCR metnindeki ilk dolu satiri
-        // isletme adi kabul ediyoruz.
-        private string? IsletmeAdiBul(string ocrMetni)
-        {
-            var satirlar = ocrMetni
-                .Split(
-                    '\n',
-                    StringSplitOptions.RemoveEmptyEntries)
-                .Select(satir => satir.Trim())
-                .Where(satir =>
-                    !string.IsNullOrWhiteSpace(satir))
-                .ToList();
-
-            return satirlar.FirstOrDefault();
-        }
-
-        // 07.05.2019, 07/05/2019 veya
-        // 07-05-2019 gibi tarihleri bulur.
-        private DateTime? TarihBul(string ocrMetni)
-        {
-            var eslesme = Regex.Match(
-                ocrMetni,
-                @"\b(\d{2})[./-](\d{2})[./-](\d{4})\b");
-
-            if (!eslesme.Success)
-            {
-                return null;
-            }
-
-            var tarihMetni = eslesme.Value
-                .Replace(".", "/")
-                .Replace("-", "/");
-
-            if (DateTime.TryParseExact(
-                tarihMetni,
-                "dd/MM/yyyy",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var tarih))
-            {
-                return tarih;
-            }
-
-            return null;
-        }
-
-        // "GENEL TOPLAM 90,20" gibi
-        // bir ifadeden tutari bulur.
-        private decimal? ToplamTutarBul(string ocrMetni)
-        {
-            var eslesme = Regex.Match(
-                ocrMetni,
-                @"GENEL\s+TOPLAM\s+(\d+[.,]\d{2})",
-                RegexOptions.IgnoreCase);
-
-            if (!eslesme.Success)
-            {
-                return null;
-            }
-
-            var tutarMetni = eslesme
-                .Groups[1]
-                .Value
-                .Replace(",", ".");
-
-            if (decimal.TryParse(
-                tutarMetni,
-                NumberStyles.Number,
-                CultureInfo.InvariantCulture,
-                out var tutar))
-            {
-                return tutar;
-            }
-
-            return null;
-        }
 
         [HttpPut("{id:int}/dogrula")]
         public async Task<IActionResult> PutFisDogrula(
@@ -436,22 +441,64 @@ namespace GelirGiderTakip.Api.Controllers
                 return NotFound("Fis bulunamadi.");
             }
 
-            if (dto.Tutar.HasValue && dto.Tutar.Value <= 0)
+            if (dto.Tutar.HasValue &&
+                dto.Tutar.Value <= 0)
             {
-                return BadRequest("Tutar sifirdan buyuk olmalidir.");
+                return BadRequest(
+                    "Tutar sifirdan buyuk olmalidir.");
             }
 
-            fis.AlgilananIsletmeAdi = dto.IsletmeAdi?.Trim();
-            fis.AlgilananTutar = dto.Tutar;
-            fis.AlgilananTarih = dto.Tarih;
-            fis.DogrulanmaTarihi = DateTime.UtcNow;
 
-            
+            if (dto.KategoriId.HasValue)
+            {
+                var kategoriVarMi = await _context.Kategoriler
+                    .AsNoTracking()
+                    .AnyAsync(kategori =>
+                        kategori.Id == dto.KategoriId.Value &&
+                        kategori.AktifMi &&
+                        kategori.Tur == IslemTuru.Gider &&
+                        (kategori.KullaniciId == null ||
+                         kategori.KullaniciId == kullaniciId));
+
+                if (!kategoriVarMi)
+                {
+                    return BadRequest(
+                        "Gecerli bir gider kategorisi secilmelidir.");
+                }
+            }
+
+
+            // Fis bilgilerini guncelle
+            fis.AlgilananIsletmeAdi =
+                dto.IsletmeAdi?.Trim();
+
+            fis.AlgilananTutar =
+                dto.Tutar;
+
+            fis.AlgilananTarih =
+                dto.Tarih;
+
+            fis.DogrulanmaTarihi =
+                DateTime.UtcNow;
+
+
+           
             await FinansalIslemSenkronizeEt(
-            fis,
-            kullaniciId);
+                fis,
+                kullaniciId,
+                dto.KategoriId);
 
             await _context.SaveChangesAsync();
+
+
+            if (fis.AlgilananTutar.HasValue)
+            {
+                await _butceBildirimServisi.ButceleriKontrolEt(
+                    kullaniciId,
+                    fis.AlgilananTarih ?? fis.YuklenmeTarihi,
+                    dto.KategoriId);
+            }
+
 
             return Ok(new
             {
@@ -461,6 +508,8 @@ namespace GelirGiderTakip.Api.Controllers
                 fis.AlgilananTutar,
                 fis.AlgilananTarih,
                 fis.DogrulanmaTarihi,
+                KategoriId = dto.KategoriId,
+
                 fis.HamOcrMetni
             });
         }

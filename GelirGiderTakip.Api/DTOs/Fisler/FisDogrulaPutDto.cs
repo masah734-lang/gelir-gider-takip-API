@@ -7,5 +7,6 @@
         public decimal? Tutar { get; set; }
 
         public DateTime? Tarih { get; set; }
+        public int? KategoriId { get; set; }
     }
 }
